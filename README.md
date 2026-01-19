@@ -19,7 +19,7 @@
 ## 🏗️ System Architecture & Infra
 > **보안 강화를 위한 VPC 네트워크 분리 (Public / Private Zone)**
 
-![System Architecture](./images/system.jpg)
+![System Architecture](./images/system.jpeg)
 
 - **Reverse Proxy (Nginx):** Public Zone에 배치하여 외부 트래픽을 수신하고, 내부 Private Zone의 서버로 라우팅합니다.
 - **Physical Separation:** `Main Server`(사용자용)와 `Admin Server`(관리자용)를 물리적으로 분리하여, 트래픽 폭주 시에도 관리자 기능의 안정성을 보장합니다.
