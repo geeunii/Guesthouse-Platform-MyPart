@@ -31,7 +31,7 @@
 
 ## 🎯 프로젝트 소개
 
-**"신규 숙소도 데이터 기반의 AI 컨설팅을 받을 수 있을까?"** 라는 질문에서 출발했습니다.  
+**"신규 숙소도 데이터 기반의 AI 컨설팅을 받을 수 있을까?"** 라는 질문에서 출발했습니다.
 생성형 AI(Google Gemini)를 활용해 숙소 리뷰, 트렌드를 분석하고 운영 솔루션을 제안하는 **B2B 호스트 관리 플랫폼**입니다. 기존의 모놀리식 구조를 개선하여, **NCP VPC 환경에서 User/Admin 서버를 논리적으로 분리**하고 보안을 강화했습니다.
 
 ### 💡 기획 배경
@@ -54,7 +54,7 @@
 
 ## 👨‍💻 핵심 기여 및 역할
 
-프로젝트의 **관리자 및 호스트 기능 개발을**했으며, **AI 기능 설계부터 인프라 구조 개선**에 이르기까지 핵심적인 역할을 수행했습니다. (총 6인 중 기여도 약 25%)
+프로젝트의 **관리자 및 호스트 기능 개발을 리드**했으며(Backend 3인 중 1인), **AI 기능 설계부터 인프라 구조 개선**에 이르기까지 핵심적인 역할을 수행했습니다. (총 6인 중 기여도 약 25%)
 
 ### 1. AI 기반 호스트 리포트 시스템 설계 및 개발
 
@@ -90,6 +90,21 @@
 
 ---
 
+## 📐 시스템 아키텍처
+
+**보안을 최우선으로 고려하여 NCP VPC 환경 내에서 Public/Private Subnet을 분리 설계했습니다.** 외부 요청은 오직 Nginx를 통해서만 인가된 서버로 라우팅되며, DB와 Admin 서버는 폐쇄망에 배치하여 외부 위협을 원천 차단했습니다.
+
+<div align="center">
+  <img src="images/system_architecture.jpg" alt="System Architecture Diagram" width="80%">
+</div>
+<br>
+
+* **Public Zone:** 프론트엔드 정적 파일 배포 및 Nginx 리버스 프록시 서버가 위치합니다.
+* **Private Zone:** 비즈니스 로직을 수행하는 WAS(Main Server, Admin Server)와 데이터베이스(MySQL, Redis)가 위치하며, 외부에서 직접 접근할 수 없습니다.
+* **DevOps:** GitHub Actions를 통해 소스 코드 변경 시 자동으로 빌드 및 배포(CI/CD)가 이루어집니다.
+
+---
+
 ## 💾 데이터베이스 설계
 
 **설계 목표:** 호스트, 숙소, 예약, 리뷰, 정산 등 각 도메인의 역할을 명확히 분리하고, 기능 확장에 유연하게 대처할 수 있는 구조를 만드는 데 집중했습니다.
@@ -100,9 +115,12 @@
 
 ### ERD (Entity-Relationship Diagram)
 
-```markdown
-![ERD](https://www.erdcloud.com/d/DnZ9YBdQia5PuCxng)
-```
+<div align="center">
+  <a href="https://www.erdcloud.com/d/DnZ9YBdQia5PuCxng" target="_blank">
+    <img src="images/erd_diagram.png" alt="ERD Diagram" width="90%">
+  </a>
+  <p>👆 이미지를 클릭하면 고화질 원본 ERD를 확인할 수 있습니다.</p>
+</div>
 
 ---
 
@@ -117,134 +135,40 @@
 - **[해결]** `parseSafe`와 `convertToList`라는 방어적 파싱 로직을 2단계로 구현했습니다. AI 응답을 `Object`로 받은 뒤, `instanceof`로 타입을 확인하고 다양한 케이스에 대응하여 `List<String>`으로 안전하게 변환함으로써 **파싱 에러율 0%** 를 달성했습니다.
 
   ```java
-  // HostAiInsightService.java
-
-  /**
-   * AI가 반환한 JSON 문자열을 안전하게 Map으로 파싱하고,
-   * 예측 불가능한 Key와 Value 형태를 표준 포맷으로 정제합니다.
-   */
+  // HostAiInsightService.java (핵심 로직 발췌)
   private Map<String, Object> parseSafe(String jsonString) {
       try {
           // 1. 응답을 Map<String, Object>로 유연하게 파싱
           Map<String, Object> map = objectMapper.readValue(jsonString, new TypeReference<>() {});
-
-          // 2. AI가 혼용한 키 값들을 표준 키(e.g., summary, pros)로 보정
-          if (map.containsKey("overview")) map.put("summary", map.get("overview"));
-          if (map.containsKey("strength")) map.put("pros", map.get("strength"));
-          if (map.containsKey("weakness")) map.put("cons", map.get("weakness"));
-          if (map.containsKey("improvements")) map.put("cons", map.get("improvements"));
+          // ... (중략: 키 값 보정 로직) ...
 
           // 3. 모든 필드를 convertToList를 통해 List<String>으로 강제 변환
           map.put("pros", convertToList(map.get("pros")));
-          map.put("cons", convertToList(map.get("cons")));
-          map.put("actions", convertToList(map.get("actions")));
-          map.put("monitoring", convertToList(map.get("monitoring")));
-
-          map.putIfAbsent("summary", "데이터 분석을 완료했습니다.");
-          return map;
+          // ... (후략)
       } catch (Exception e) {
           log.error("AI 응답 파싱 실패: {}", jsonString, e);
-          // 파싱 실패 시에도 안정적인 UI 렌더링을 위해 Fallback 객체 반환
-          return Map.of(
-              "summary", "AI 응답을 분석하는 중 오류가 발생했습니다.",
-              "pros", List.of("분석 실패"),
-              "actions", List.of("잠시 후 다시 시도해주세요.")
-          );
+          // 파싱 실패 시 Fallback 객체 반환
+          return Map.of("summary", "AI 응답 분석 오류", "pros", List.of("분석 실패"));
       }
   }
 
-  /**
-   * Object 타입의 값을 어떤 경우에도 List<String>으로 변환합니다.
-   *  - Case 1: 정상적인 List -> 그대로 반환
-   *  - Case 2: "[item1, item2]" 형태의 문자열 -> JSON 배열로 파싱
-   *  - Case 3: "item1, item2" 형태의 문자열 -> 쉼표로 분리
-   */
-  private List<String> convertToList(Object obj) {
-      if (obj == null) return new ArrayList<>();
-
-      if (obj instanceof List<?>) {
-          return ((List<?>) obj).stream()
-                  .map(item -> Objects.toString(item, "").replace("**", ""))
-                  .collect(Collectors.toList());
-      }
-
-      if (obj instanceof String) {
-          String str = (String) obj;
-          // Case 2: 문자열이 JSON 배열 형태일 경우
-          if (str.startsWith("[") && str.endsWith("]")) {
-              try {
-                  return objectMapper.readValue(str, new TypeReference<List<String>>() {});
-              } catch (Exception e) {
-                  // JSON 파싱 실패 시 쉼표 기준으로 분리
-                  return Arrays.stream(str.substring(1, str.length() - 1).split(","))
-                          .map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toList());
-              }
-          }
-          // Case 3: 일반 문자열일 경우
-          return Arrays.stream(str.split(","))
-                  .map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toList());
-      }
-
-      return List.of(obj.toString());
-  }
-  ```
+```
 
 </details>
 
 <details>
 <summary><strong>👉 2. Nginx 502 Bad Gateway (리버스 프록시 라우팅 실패)</strong></summary>
 
-- **[문제]** 서버 분리 후, 관리자 페이지 접속 시 502 에러가 발생했습니다. Public Subnet의 Nginx가 Private Subnet에 있는 Admin Server(`10.0.x.x:8081`)를 찾지 못하는 문제였습니다.
-- **[해결]** Nginx의 `location /api/admin/` 블록에 `proxy_pass` 대상으로 `localhost`가 아닌 **Private IP를 명시**하여 라우팅 경로를 확정했습니다. 이를 통해 외부 요청이 Nginx를 통해서만 내부망 서버에 도달하도록 강제했습니다.
-
-  ```nginx
-  # /etc/nginx/sites-available/default
-  server {
-      listen 80;
-      server_name your_domain.com;
-
-      # ... (기타 설정) ...
-
-      # User API 서버 (Public Subnet 내 위치)
-      location /api/ {
-          proxy_pass http://localhost:8080; # or 127.0.0.1:8080
-          proxy_set_header X-Real-IP $remote_addr;
-          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-          proxy_set_header Host $host;
-      }
-
-      # Admin API 서버 (Private Subnet 내 위치)
-      location /api/admin/ {
-          # Admin 서버의 Private IP를 직접 지정하여 Private Subnet으로 라우팅
-          proxy_pass http://10.0.x.x:8081; # 보안상 마스킹 처리 (실제 Private IP)
-          proxy_set_header X-Real-IP $remote_addr;
-          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-          proxy_set_header Host $host;
-      }
-  }
-  ```
+* **[문제]** 서버 분리 후, 관리자 페이지 접속 시 502 에러가 발생했습니다. Public Subnet의 Nginx가 Private Subnet에 있는 Admin Server(`10.0.x.x:8081`)를 찾지 못하는 문제였습니다.
+* **[해결]** Nginx의 `location /api/admin/` 블록에 `proxy_pass` 대상으로 `localhost`가 아닌 **Private IP를 명시**하여 라우팅 경로를 확정했습니다. 이를 통해 외부 요청이 Nginx를 통해서만 내부망 서버에 도달하도록 강제했습니다.
 
 </details>
 
 <details>
 <summary><strong>👉 3. Docker "Bind for 0.0.0.0:8080 failed" (좀비 포트 충돌)</strong></summary>
 
-- **[문제]** `docker run` 시 8080 포트가 이미 사용 중이라는 에러가 발생했습니다. `netstat -tnlp`으로 확인해도 점유 프로세스가 보이지 않는 'Ghost Port' 현상이었습니다.
-- **[해결]** `systemctl stop docker.socket`으로 소켓을 정리하고, User/Admin 서버의 Host 포트를 각각 `8080`, `8081`로 명확히 분리하여 충돌을 원천적으로 방지했습니다.
-
-  ```bash
-  # 1. (필요 시) 포트 점유의 원인이 될 수 있는 Docker 소켓 서비스를 중지
-  $ sudo systemctl stop docker.socket
-
-  # 2. User/Admin 서버 실행 시 Host 포트를 명시적으로 분리하여 실행
-  # User Server
-  $ docker run -d -p 8080:8080 --name user-server \
-    -e "SPRING_PROFILES_ACTIVE=default" your-app-image
-
-  # Admin Server
-  $ docker run -d -p 8081:8081 --name admin-server \
-    -e "SPRING_PROFILES_ACTIVE=admin" your-app-image
-  ```
+* **[문제]** `docker run` 시 8080 포트가 이미 사용 중이라는 에러가 발생했습니다. `netstat -tnlp`으로 확인해도 점유 프로세스가 보이지 않는 'Ghost Port' 현상이었습니다.
+* **[해결]** `systemctl stop docker.socket`으로 소켓을 정리하고, User/Admin 서버의 Host 포트를 각각 `8080`, `8081`로 명확히 분리하여 충돌을 원천적으로 방지했습니다.
 
 </details>
 
@@ -254,7 +178,7 @@
 
 > **데이터 부족(Cold Start) 시에도 AI가 지역 트렌드를 분석하여 컨설팅을 제공합니다.**
 
-_(서비스 동작을 보여주는 GIF나 동영상 링크를 추가하면 좋습니다)_
+*(서비스 동작을 보여주는 GIF나 동영상 링크를 추가하면 좋습니다)*
 
 ---
 
