@@ -95,7 +95,7 @@
 **보안을 최우선으로 고려하여 NCP VPC 환경 내에서 Public/Private Subnet을 분리 설계했습니다.** 외부 요청은 오직 Nginx를 통해서만 인가된 서버로 라우팅되며, DB와 Admin 서버는 폐쇄망에 배치하여 외부 위협을 원천 차단했습니다.
 
 <div align="center">
-  <img src="images/system.jpg" alt="System Architecture" width="90%">
+  <img src="images/system.jpeg" alt="System Architecture" width="90%">
 </div>
 
 ---
@@ -111,7 +111,7 @@
 ### ERD (Entity-Relationship Diagram)
 
 <div align="center">
-  <img src="images/erd.jpg" alt="ERD Diagram" width="95%">
+  <img src="images/Final_ERD.png" alt="ERD Diagram" width="95%">
 </div>
 
 ---
