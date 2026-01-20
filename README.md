@@ -90,6 +90,16 @@
 
 ---
 
+## 📐 시스템 아키텍처
+
+**보안을 최우선으로 고려하여 NCP VPC 환경 내에서 Public/Private Subnet을 분리 설계했습니다.** 외부 요청은 오직 Nginx를 통해서만 인가된 서버로 라우팅되며, DB와 Admin 서버는 폐쇄망에 배치하여 외부 위협을 원천 차단했습니다.
+
+<div align="center">
+  <img src="images/system.jpg" alt="System Architecture" width="90%">
+</div>
+
+---
+
 ## 💾 데이터베이스 설계
 
 **설계 목표:** 호스트, 숙소, 예약, 리뷰, 정산 등 각 도메인의 역할을 명확히 분리하고, 기능 확장에 유연하게 대처할 수 있는 구조를 만드는 데 집중했습니다.
@@ -100,9 +110,9 @@
 
 ### ERD (Entity-Relationship Diagram)
 
-```markdown
-![ERD](https://www.erdcloud.com/d/DnZ9YBdQia5PuCxng)
-```
+<div align="center">
+  <img src="images/erd.jpg" alt="ERD Diagram" width="95%">
+</div>
 
 ---
 
@@ -155,9 +165,9 @@
 
   /**
    * Object 타입의 값을 어떤 경우에도 List<String>으로 변환합니다.
-   *  - Case 1: 정상적인 List -> 그대로 반환
-   *  - Case 2: "[item1, item2]" 형태의 문자열 -> JSON 배열로 파싱
-   *  - Case 3: "item1, item2" 형태의 문자열 -> 쉼표로 분리
+   * - Case 1: 정상적인 List -> 그대로 반환
+   * - Case 2: "[item1, item2]" 형태의 문자열 -> JSON 배열로 파싱
+   * - Case 3: "item1, item2" 형태의 문자열 -> 쉼표로 분리
    */
   private List<String> convertToList(Object obj) {
       if (obj == null) return new ArrayList<>();
@@ -187,64 +197,68 @@
 
       return List.of(obj.toString());
   }
-  ```
 
+```
+```
 </details>
 
 <details>
 <summary><strong>👉 2. Nginx 502 Bad Gateway (리버스 프록시 라우팅 실패)</strong></summary>
 
-- **[문제]** 서버 분리 후, 관리자 페이지 접속 시 502 에러가 발생했습니다. Public Subnet의 Nginx가 Private Subnet에 있는 Admin Server(`10.0.x.x:8081`)를 찾지 못하는 문제였습니다.
-- **[해결]** Nginx의 `location /api/admin/` 블록에 `proxy_pass` 대상으로 `localhost`가 아닌 **Private IP를 명시**하여 라우팅 경로를 확정했습니다. 이를 통해 외부 요청이 Nginx를 통해서만 내부망 서버에 도달하도록 강제했습니다.
+* **[문제]** 서버 분리 후, 관리자 페이지 접속 시 502 에러가 발생했습니다. Public Subnet의 Nginx가 Private Subnet에 있는 Admin Server(`10.0.x.x:8081`)를 찾지 못하는 문제였습니다.
+* **[해결]** Nginx의 `location /api/admin/` 블록에 `proxy_pass` 대상으로 `localhost`가 아닌 **Private IP를 명시**하여 라우팅 경로를 확정했습니다. 이를 통해 외부 요청이 Nginx를 통해서만 내부망 서버에 도달하도록 강제했습니다.
+```nginx
+# /etc/nginx/sites-available/default
+server {
+    listen 80;
+    server_name your_domain.com;
 
-  ```nginx
-  # /etc/nginx/sites-available/default
-  server {
-      listen 80;
-      server_name your_domain.com;
+    # ... (기타 설정) ...
 
-      # ... (기타 설정) ...
+    # User API 서버 (Public Subnet 내 위치)
+    location /api/ {
+        proxy_pass http://localhost:8080; # or 127.0.0.1:8080
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $host;
+    }
 
-      # User API 서버 (Public Subnet 내 위치)
-      location /api/ {
-          proxy_pass http://localhost:8080; # or 127.0.0.1:8080
-          proxy_set_header X-Real-IP $remote_addr;
-          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-          proxy_set_header Host $host;
-      }
+    # Admin API 서버 (Private Subnet 내 위치)
+    location /api/admin/ {
+        # Admin 서버의 Private IP를 직접 지정하여 Private Subnet으로 라우팅
+        proxy_pass [http://10.0.](http://10.0.)x.x:8081; # 보안상 마스킹 처리 (실제 Private IP)
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $host;
+    }
+}
 
-      # Admin API 서버 (Private Subnet 내 위치)
-      location /api/admin/ {
-          # Admin 서버의 Private IP를 직접 지정하여 Private Subnet으로 라우팅
-          proxy_pass http://10.0.x.x:8081; # 보안상 마스킹 처리 (실제 Private IP)
-          proxy_set_header X-Real-IP $remote_addr;
-          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-          proxy_set_header Host $host;
-      }
-  }
-  ```
+```
+
 
 </details>
 
 <details>
 <summary><strong>👉 3. Docker "Bind for 0.0.0.0:8080 failed" (좀비 포트 충돌)</strong></summary>
 
-- **[문제]** `docker run` 시 8080 포트가 이미 사용 중이라는 에러가 발생했습니다. `netstat -tnlp`으로 확인해도 점유 프로세스가 보이지 않는 'Ghost Port' 현상이었습니다.
-- **[해결]** `systemctl stop docker.socket`으로 소켓을 정리하고, User/Admin 서버의 Host 포트를 각각 `8080`, `8081`로 명확히 분리하여 충돌을 원천적으로 방지했습니다.
+* **[문제]** `docker run` 시 8080 포트가 이미 사용 중이라는 에러가 발생했습니다. `netstat -tnlp`으로 확인해도 점유 프로세스가 보이지 않는 'Ghost Port' 현상이었습니다.
+* **[해결]** `systemctl stop docker.socket`으로 소켓을 정리하고, User/Admin 서버의 Host 포트를 각각 `8080`, `8081`로 명확히 분리하여 충돌을 원천적으로 방지했습니다.
+```bash
+# 1. (필요 시) 포트 점유의 원인이 될 수 있는 Docker 소켓 서비스를 중지
+$ sudo systemctl stop docker.socket
 
-  ```bash
-  # 1. (필요 시) 포트 점유의 원인이 될 수 있는 Docker 소켓 서비스를 중지
-  $ sudo systemctl stop docker.socket
+# 2. User/Admin 서버 실행 시 Host 포트를 명시적으로 분리하여 실행
+# User Server
+$ docker run -d -p 8080:8080 --name user-server \
+  -e "SPRING_PROFILES_ACTIVE=default" your-app-image
 
-  # 2. User/Admin 서버 실행 시 Host 포트를 명시적으로 분리하여 실행
-  # User Server
-  $ docker run -d -p 8080:8080 --name user-server \
-    -e "SPRING_PROFILES_ACTIVE=default" your-app-image
+# Admin Server
+$ docker run -d -p 8081:8081 --name admin-server \
+  -e "SPRING_PROFILES_ACTIVE=admin" your-app-image
 
-  # Admin Server
-  $ docker run -d -p 8081:8081 --name admin-server \
-    -e "SPRING_PROFILES_ACTIVE=admin" your-app-image
-  ```
+```
+
+
 
 </details>
 
@@ -254,7 +268,7 @@
 
 > **데이터 부족(Cold Start) 시에도 AI가 지역 트렌드를 분석하여 컨설팅을 제공합니다.**
 
-_(서비스 동작을 보여주는 GIF나 동영상 링크를 추가하면 좋습니다)_
+*(서비스 동작을 보여주는 GIF나 동영상 링크를 추가하면 좋습니다)*
 
 ---
 
@@ -263,3 +277,7 @@ _(서비스 동작을 보여주는 GIF나 동영상 링크를 추가하면 좋�
 **Email:** koo4934@gmail.com
 
 **Portfolio:** https://geeunii.github.io
+
+```
+
+```
