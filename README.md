@@ -197,9 +197,6 @@
 
       return List.of(obj.toString());
   }
-
-```
-```
 </details>
 
 <details>
@@ -207,6 +204,7 @@
 
 * **[문제]** 서버 분리 후, 관리자 페이지 접속 시 502 에러가 발생했습니다. Public Subnet의 Nginx가 Private Subnet에 있는 Admin Server(`10.0.x.x:8081`)를 찾지 못하는 문제였습니다.
 * **[해결]** Nginx의 `location /api/admin/` 블록에 `proxy_pass` 대상으로 `localhost`가 아닌 **Private IP를 명시**하여 라우팅 경로를 확정했습니다. 이를 통해 외부 요청이 Nginx를 통해서만 내부망 서버에 도달하도록 강제했습니다.
+
 ```nginx
 # /etc/nginx/sites-available/default
 server {
